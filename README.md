@@ -11,7 +11,13 @@
 * We must use a Deep Learning framework for this exercise as Keras.
 * We should split the dataset in train/test to verify your results.
 
+## Base
+* CRAN R 3.5.2
+* IDE  RSTUDIO
+* Libraries: Data Wrangling (DPLYR, RESHAPE2, DUMMY), Visualization(GGPLOT2), Deep Learning(KERAS), Validation(ROCR)
+
+
 ## Files 
 
-* Readme.html-> Code Explanation and model results.
+* Readme.html-> Code explanation and model results.
 * MD_V1.Rmd->Code

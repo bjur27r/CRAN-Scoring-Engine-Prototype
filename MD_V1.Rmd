@@ -1,0 +1,637 @@
+---
+title: "Students Math Score Predicction Model"
+output:
+  html_document:
+    fig_height: 5
+    fig_width: 7
+    number_sections: yes
+    theme: journal
+    toc: yes
+    toc_depth: 1
+  pdf_document:
+    toc: yes
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+>This exercise aims to fit a model able to predict the math score from a sample of 1000 students based on sociodemographics features, and other quantitative metrics such us the results from other tests. For this popouse  we obtain the dataset from  kaggle [link](https://www.kaggle.com/spscientist/students-performance-in-exams). 
+
+## Excercise Premises
+
+* We want to predict the column 'math score' using Neural Networks.
+* We must use a Deep Learning framework for this exercise as Keras.
+* We should split the dataset in train/test to verify your results.
+
+
+```{r librerias, include=FALSE}
+## Libraries Inizialization and Autodefined Functions
+##For the excution of this anlysis we will use CRAN dat wrangling, visualization libraries and finally machine learning through Keras framework 
+###Data Wrangling
+library(dplyr)
+library(dummies)
+library(reshape2)
+###Visualization
+library(ggplot2)
+###Machine Learning
+library(keras)
+install_keras()
+#Evaluación Modelo
+library(ROCR)
+##Autodefined Functions
+relevancia<-function(thres,num){ifelse(thres >= num, 1,0)}
+aport<-function(thri){ifelse(thri >0, "+","-")}
+pass<-function(score){ifelse(score >50, 1,0)}
+
+coniden_x=function(Target,VariableCategorica,prior){
+  levels=levels(VariableCategorica)
+  colors=c()
+  for (i in 1:length(levels)){
+    TABLA=table(Target,VariableCategorica==levels[i])
+    chi=chisq.test(TABLA)
+    if (chi$p.value<0.05){
+      colors=c(colors,"green")
+    }else{
+      colors=c(colors,"gray")
+    }
+  }
+  TABLA=table(Target,VariableCategorica)
+  plot=barplot(100*TABLA[2,]/(TABLA[1,]+TABLA[2,]),ylim=c(0,100),col=colors,cex.names=0.6)
+  text(x=plot, y=5+100*TABLA[2,]/(TABLA[1,]+TABLA[2,]),labels=paste(round(100*TABLA[2,]/(TABLA[1,]+TABLA[2,]),2),"%",sep=""))
+  abline(h=100*prior,col="red")
+}
+
+
+```
+
+
+# Loading Students Dataset
+
+We start loading StudentsPerfomance dataset from the  defined working path. 
+
+```{r LSDset}
+
+
+#Setting working path
+setwd("/home/bjur/R/Students_Performance_Model/Students_Performance")
+filesp2 <- "StudentsPerformance.csv"
+students_data = read.csv(filesp2)
+```
+
+
+
+# Student Dataset at glance 
+
+##Data Exploration Block
+
+###Descriptive Exploration
+
+>With the porpuse to understand the dataset we call the following R descriptive functions, in order to understand the variables types (Categorical, Numeric),frecuencies for categorical fatures and main statistics for the continuous variables.  
+
+```{r Explor}
+str(students_data)
+head(students_data)
+summary(students_data)
+```
+
+**net/net**: From a dataset of 1.000 records  and 8 dimensions,  there are five categorical variables within sociodemographics scopes (gender,race, parental education level)  and other cualitatives such us the students that completed the test preparation course  and even lunch type of those students. Also we find continous variables (reading and writing  scores ) .And finally the  math score as the target variable to predict,  is also a continous metric in the range from 0-10 , delivering a median  66  without partition of the whole dataset.  
+
+### Some Visuals
+
+```{r ExplorV}
+ggplot(students_data, aes(x = gender, y = math.score)) +geom_boxplot(colour="yellow", fill = "white",      
+                                                                      size = 1, notch = TRUE)+ geom_jitter(colour = "yellow",size=1)+ facet_grid(~ race.ethnicity)    
+
+
+students_data[,c("math.score","reading.score","writing.score")]%>%
+melt()%>%
+      ggplot(aes(value, fill= variable, colour=variable))+ geom_density(alpha = 0.1)+
+          labs(title="Numeric Variables Distributions(Scores)") +
+              labs(x="Score", y="Dense")
+
+
+```
+
+**net/net**:A light visual exploration helps to understand quickly for example how continous features distribution overlaps target variable, or higher scores for males within all the ethnics universe. 
+
+
+#  Uni/Multivariate Analysis Block
+
+>This block aims to understand the behaviour of the target variable explained from the other set of variables (features) as predictors, in standalone basis, as subsets  or as a whole. For that task we measure the relevance and the explanatory capacity over  the math score variance.  This block is strictly descriptive as the training  of the model through deep learning technics aims to fit by itselt  all this depencencies under the minimization of the loss and error, or maximization of the accuracy (this last in case of a classification model).
+
+##Univariate
+
+
+
+```{r Reg_L_Ind, include=FALSE}
+##We build univariant models from all categorical and numeric features.
+
+
+modeloInd1=lm(math.score ~ gender, data = students_data)
+m <- summary(modeloInd1)
+m1 <-as.data.frame(m$coefficients)
+m1$var <- rownames(m1)
+m1$Mod<- "M1"
+m1$R <- m$adj.r.squared
+m1$Fs <- m$fstatistic[1]
+
+
+modeloInd2=lm(math.score ~ race.ethnicity, data = students_data)
+m <- summary(modeloInd2)
+m2 <-as.data.frame(m$coefficients)
+m2$var <- rownames(m2)
+m2$Mod<- "M2"
+m2$R <- m$adj.r.squared
+m2$Fs <- m$fstatistic[1]
+
+Models <- rbind(m1,m2)
+
+modeloInd3=lm(math.score ~ parental.level.of.education, data = students_data)
+m <- summary(modeloInd3)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M3"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+
+modeloInd4=lm(math.score ~ lunch, data = students_data)
+m <- summary(modeloInd4)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M4"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+
+
+modeloInd5=lm(math.score ~ test.preparation.course, data = students_data)
+m <- summary(modeloInd5)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M5"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+
+
+modeloInd6=lm(math.score ~ reading.score, data = students_data)
+m <- summary(modeloInd6)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M6"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+
+modeloInd7=lm(math.score ~ writing.score, data = students_data)
+m <- summary(modeloInd7)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M7"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+Models <- Models %>% 
+  mutate(Confianza = relevancia(0.05,`Pr(>|t|)`), Aporte = aport(Estimate))
+
+
+
+
+## -------------------------------------------------------------------------
+
+
+
+```
+
+We study all the posible  linear models from the set of features. As a premise R transforms all categorical variables as dummies inputs modelling all its posibble values(commoly called  one hot encoding).
+
+
+
+```{r Reg_L_Ind_EV}
+
+ggplot(Models,aes(x =Mod ,y = var,fill = Confianza)) + 
+  geom_tile(colour="white") + geom_text(aes(label=Aporte))+ 
+  scale_fill_gradient(low = "red", high = "green")
+
+Models %>%
+    group_by(Mod) %>%
+    summarise(Correlation = round(mean(R)*100,2), Sig = mean(Confianza)) %>%
+    ggplot(aes(x =Mod ,y =Correlation, fill= Sig )) + geom_bar(colour="white",stat = "identity") + geom_text(aes(label=Correlation))
+
+
+```
+
+**net/net**: All the cuantitative features explains under at least  95% confidence partly  the variance of the model.From the categorical  features block (as dummies)  we observe how the gender male, some ethnics, even an standart lunch (Vs free reduced) type  explains with high confidence levels  better math scores within  the students records, against a none preparation course , or even a poor parents education level drives a worse math scores. Individually the categorical features explain poorly the math score variance.As we previously shily  noticed in the visual exploration, the continous features such us reading and writting scores explanins better math scores. 
+
+##  Multivariate Analisys Block
+
+
+```{r Reg_L_Mul_2, include=FALSE}
+##We build multivariant some models
+###LM model Against Whole dimensions
+modeloMul1=lm(math.score ~ ., data = students_data)
+m <- summary(modeloMul1)
+m1 <-as.data.frame(m$coefficients)
+m1$var <- rownames(m1)
+m1$Mod<- "M1"
+m1$R <- m$adj.r.squared
+m1$Fs <- m$fstatistic[1]
+
+###LM model Against cross impact ethnic:gender
+modeloMul2=lm(math.score ~ . + race.ethnicity:gender , data = students_data)
+m <- summary(modeloMul2)
+m2 <-as.data.frame(m$coefficients)
+m2$var <- rownames(m2)
+m2$Mod<- "M2"
+m2$R <- m$adj.r.squared
+m2$Fs <- m$fstatistic[1]
+
+Models <- rbind(m1,m2)
+
+###LM model without reading score for colineatily impact with writng scores.
+modeloMul3=lm(math.score ~ gender + race.ethnicity +parental.level.of.education+ test.preparation.course+writing.score, data = students_data)
+m <- summary(modeloMul3)
+m3 <-as.data.frame(m$coefficients)
+m3$var <- rownames(m3)
+m3$Mod<- "M3"
+m3$R <- m$adj.r.squared
+m3$Fs <- m$fstatistic[1]
+Models <- rbind(Models,m3)
+
+Models <- Models %>% 
+  mutate(Confianza = relevancia(0.05,`Pr(>|t|)`), Aporte = aport(Estimate))
+
+
+
+
+## -------------------------------------------------------------------------
+
+
+
+```
+
+
+We study   some   multivariate regression models   set of features, and  the whole features set, with the purpose to understand cross impact of the features, or colineality of the numeric features.  
+
+```{r Reg_L_Mul_EV_2}
+
+ggplot(Models,aes(x =Mod ,y = var,fill = Confianza)) + 
+  geom_tile(colour="white") + geom_text(aes(label=Aporte))+ 
+  scale_fill_gradient(low = "red", high = "green")
+
+Models %>%
+    group_by(Mod) %>%
+    summarise(Correlation = round(mean(R)*100,2), Sig = mean(Confianza)) %>%
+    ggplot(aes(x =Mod ,y =Correlation, fill= Sig )) + geom_bar(colour="white",stat = "identity") + geom_text(aes(label=Correlation))
+
+
+```
+
+
+
+```{r Reg_L_Mul_EV}
+#Model Summary
+modeloMul1=lm(math.score ~ ., data = students_data)
+summary(modeloMul1)
+
+``` 
+
+
+
+**net/net**: All the cuantitative features explains under a 95% confindence partly  the variance of the model ,  from the categorical  features block (dummmies), we observe how the gender male, some ethnics and even an standart lunch(Vs fgree reduced) types  explains with confidence a better math scores, against a none preparation course , or even a poor parents education level that  drives to  a worse math scoring.
+
+
+#Model Development Block
+
+For the model development we will develop two different models, one regression model with a continous output "math score" in the range of 1-100, and a binary classificator aiming to classify students between those who passes and not according to a threshold of 50 points, both according to the features provided.
+
+##Regression Model Development Block
+
+#### Data Formating and New Sinthetic Data Creation
+
+In this section we will summarize  numeric scorings(writting and reading) transforming those variables to percentiles of their owns distribution, for further predictions we should do a t-test in order to understand samples independences.
+
+```{r DaF}
+students_dataB <- students_data %>% 
+  mutate(reading.score.percentile = round(percent_rank(reading.score)*10),writing.score.percentile = round(percent_rank(writing.score)*10))
+students_dataB$reading.score<-NULL
+students_dataB$writing.score<-NULL
+table(students_data$reading.score.percentile)
+table(students_data$reading.score.percentile)
+
+```
+
+
+#### Data Splitting Block
+
+Although  keras  ML library imported already includes the dataset splitting functions during the network trainning procesess, in order to carry out further validation analysis we wil split the dataset despite of its small size.
+
+```{r BCM}
+
+index <- sample(1:nrow(students_dataB),round(0.8*nrow(students_dataB)))
+train <- students_dataB[index,]
+test <- students_dataB[-index,]
+
+#Train Model Input Formating  
+x_train <- train[, -which(names(train) %in% c("math.score"))]
+y_train<-train$math.score
+x_train_mtrx <-  data.matrix(dummy.data.frame(x_train))
+y_train_mtrx <-data.matrix(y_train)
+
+#Test Model Input Formating 
+
+x_test <- test[, -which(names(test) %in% c("math.score"))]
+y_test<-test$math.score
+x_test_mtrx <-  data.matrix(dummy.data.frame(x_test))
+y_test_mtrx <-data.matrix(y_test)
+
+
+```
+
+We design under keras framework a network for a regression  model with two hidden layers with relu activation function an finally a layer with a single unit and no activation  function, able to predict continous values linealny in any range.
+
+We compile the network with the mse(mean square error) function, as the loss function very common in this kind of supervised regression problems as the difference between the network predictions and the given  targets. 
+
+###Models Selection(Keras)
+
+```{r BCMSel}
+#Model design
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 300, activation = "relu", 
+              input_shape = dim(x_train_mtrx)[[2]]) %>% 
+  layer_dense(units = 30, activation = "relu") %>% 
+  layer_dense(units = 30, activation = "relu") %>% 
+  layer_dense(units = 1) 
+
+#Compilation
+model %>% compile(
+  optimizer = "rmsprop", 
+  loss = "mse", 
+  metrics = c("mae")
+)
+
+#Train
+history <- model %>% fit(
+  x_train_mtrx, y_train_mtrx, 
+  epochs = 30, batch_size = 128, 
+  validation_split = 0.2
+)
+
+
+summary(model)
+
+```
+
+
+###Evaluation
+
+We evaluate the model as the MAE(Mean square Error) absolute level and relative between the test and the train samples in order to undesrtand overfitting issues.    
+
+```{r Frecs, echo=FALSE}
+plot(history)
+
+#Train Error (MAE)
+model %>% evaluate(x_train_mtrx, y_train_mtrx,verbose = 0)
+
+#Test
+x_test <- test[, -which(names(test) %in% c("math.score"))]
+y_test<-test$math.score
+
+x_test_mtrx <-  data.matrix(dummy.data.frame(x_test))
+y_test_mtrx <-data.matrix(y_test)
+
+#Train Error(MAE)
+model %>% evaluate(x_test_mtrx, y_test_mtrx,verbose = 0)
+
+#Visual Exploration
+
+train_2<-NULL
+test_2<-NULL
+
+predictions <- model %>% predict(x_train_mtrx)
+train_2 <- cbind(train,as.data.frame(predictions))
+train_2$sample <- "train"
+predictions <- model %>% predict(x_test_mtrx)
+test_2<-cbind(test,as.data.frame(predictions))
+test_2$sample <- "test"
+
+students_f <-rbind(train_2,test_2)
+
+students_f%>%
+  ggplot( aes(math.score, V1, colour=sample)) +
+  geom_point() +
+  geom_smooth( method = "lm", formula = y ~ x)
+
+
+  
+```  
+
+**net/net* We observe agil error  convergence of the train and test samples in few epochs to low MAE (Mean average Error) levels confirming a good perfomance traning, therefore  without overfitting issues as Test MAE is analgous to the Trainning MAE, an in the  close to 5 math score points in average (Vs a math score media of 66 so less than 10%). 
+
+## Binary Classification  Model 
+
+###Data Formating and sinthetic creation
+
+We create a new output binary variable for training and testing called "pass"  that models if a record has pass maths according to an score threshold of 50 points. 
+
+We incude the independence test regarding the pass variable, through a chi2 test for each category(Against pass target). If we t reject the indepence test the feature is  represented with a green colour in the bar plot above. Also we include as a height of the bar how  taht categori influences the pass, so if a bar height is above the mean(represented with the red line), that category has an influence over the math score.
+
+```{r M_CDaF, echo=FALSE}
+
+students_dataC <- students_data %>% 
+  mutate(reading.score.percentile = round(percent_rank(reading.score)*10),writing.score.percentile = round(percent_rank(writing.score)*10), pass =pass(math.score))
+students_dataC$reading.score<-NULL
+students_dataC$writing.score<-NULL
+students_dataC$math.score-NULL
+positives =sum(students_dataC$pass==1)/length(students_dataC$pass)
+
+
+coniden_x(students_dataC$pass,students_dataC$gender,positives)
+
+coniden_x(students_dataC$pass,students_dataC$race.ethnicity,positives)
+
+coniden_x(students_dataC$pass,students_dataC$lunch,positives)
+
+coniden_x(students_dataC$pass,students_dataC$parental.level.of.education,positives)
+
+
+coniden_x(students_dataC$pass,students_dataC$test.preparation.course,positives)
+
+
+```
+
+
+**net/net** From this  analysis we get some inights already observed in the univariant analisys for the continous output, such us the positive a revelevant influence of the male, gerder, ethnic A and  E, the standart lunch or the have succeed the preparation course, against  the negative impact of the high school parents educational level (some high school).
+
+
+#### Data Splitting Block
+
+Although the ML library imported already includes the dataset splitting funtions during the network trainning procesess, in order to carry out further validation analysis we wil split the dataset despite of its small size.
+
+
+```{r BCM_M}
+
+
+index <- sample(1:nrow(students_dataC),round(0.8*nrow(students_dataC)))
+train <- students_dataC[index,]
+test <- students_dataC[-index,]
+
+
+x_train <- train[, -which(names(train) %in% c("pass"))]
+y_train<-train$pass
+
+x_train_mtrx <-  data.matrix(dummy.data.frame(x_train))
+y_train_mtrx <-data.matrix(y_train)
+
+
+
+
+```
+
+
+###Model Development Block (Pass, Not Pass)
+
+We design under keras framework a network for a Binary clasification model with two hidden layers with relu activation function an finally a sigmoid function able to model outputs within de [0,1] interval, the outputs of the binary classificator.We compile the network aiming to  minimice the rmspropop with a binary crossentropy loss function.
+
+
+```{r BCM_MDB}
+
+model <- keras_model_sequential() %>% 
+  layer_dense(units = 40, activation = "relu", 
+              input_shape = dim(x_train_mtrx)[[2]]) %>% 
+  layer_dense(units = 40, activation = "relu") %>% 
+  layer_dense(units = 1, activation = "sigmoid")
+summary(model)
+
+model %>% compile(
+  optimizer = "rmsprop", 
+  loss = "binary_crossentropy", 
+  metrics = c("accuracy")
+)
+
+
+history <- model %>% fit(
+  x_train_mtrx, y_train_mtrx, 
+  epochs = 50, batch_size = 128, 
+  validation_split = 0.2
+)
+
+```
+
+
+###Evaluation
+
+We evaluate the model taking following accuray performance and its convergence an levels accounted in the evaluation caaried out over  test and train samples.
+
+####Error convergence and overfitting
+```{r Frecs2}
+
+plot(history)
+
+#Train Error
+model %>% evaluate(x_train_mtrx, y_train_mtrx,verbose = 0)
+
+#Test
+x_test <- test[, -which(names(test) %in% c("pass"))]
+y_test<-test$pass
+
+x_test_mtrx <-  data.matrix(dummy.data.frame(x_test))
+y_test_mtrx <-data.matrix(y_test)
+
+#Train Error
+model %>% evaluate(x_test_mtrx, y_test_mtrx,verbose = 0)
+
+#Visual Exploration
+train_2<-NULL
+test_2<-NULL
+
+predictions <- model %>% predict(x_train_mtrx)
+train_2 <- cbind(train,as.data.frame(predictions))
+train_2$sample <- "train"
+predictions <- model %>% predict(x_test_mtrx)
+test_2<-cbind(test,as.data.frame(predictions))
+test_2$sample <- "test"
+
+students_f <-rbind(train_2,test_2)
+table(students_f$pass)
+
+```
+
+**net/net* Once again in the Binary Classification model we observe agil error  convergence of the train and test samples in few epochs to close to 1  accuracy level confirming a good perfomance of the  trainning process,   without overfitting issues as Test accuracy is similar to the Trainning accuracy above 90%. 
+
+
+####ROC & AUC (Aurea uder the Curve)
+```{r Frecs21}
+
+#Train
+students_f <-train_2
+ALPHA=0.5
+# Confussion Matrix Train Sample
+Confusion_Test=table(students_f$pass,students_f$V1>= ALPHA)
+Confusion_Test
+# Accuracy Train Sample
+Accuracy_Test= (sum(students_f$pass==1 & students_f$V1>=ALPHA)+sum(students_f$pass==0 & students_f$V1<ALPHA))/length(students_f$pass)
+Accuracy_Test
+# Precission Test Sample
+Precision_Test=sum(students_f$pass==1 & students_f$V1>=ALPHA)/sum(students_f$V1>=ALPHA)
+Precision_Test
+# Coverage Train Sample
+Cobertura_Test=sum(students_f$pass==1 & students_f$V1>=ALPHA)/sum(students_f$pass==1)
+Cobertura_Test
+
+
+
+#Test
+students_f <-test_2
+ALPHA=0.5
+# Confussion Matrix Test Sample
+Confusion_Test=table(students_f$pass,students_f$V1>= ALPHA)
+Confusion_Test
+
+# Accuracy Test Sample
+Accuracy_Test= (sum(students_f$pass==1 & students_f$V1>=ALPHA)+sum(students_f$pass==0 & students_f$V1<ALPHA))/length(students_f$pass)
+Accuracy_Test
+
+# Precission Test Sample
+Precision_Test=sum(students_f$pass==1 & students_f$V1>=ALPHA)/sum(students_f$V1>=ALPHA)
+Precision_Test
+
+# Coverage Test Sample
+Cobertura_Test=sum(students_f$pass==1 & students_f$V1>=ALPHA)/sum(students_f$pass==1)
+Cobertura_Test
+
+
+```
+**net/net**As we observe we find main confussion KPIs, anologous between test and train sample, such convergence  delivers a good classification model fitting  metrics, as the models works with similar performance for different samples to the trainig sample.
+
+* Accuracy : As a metric  of clasiffication of both binary options (True Pass, and True Fails) within all the datastes
+* Precission : True pass (True Pass, and True Fails) within all the passes predicted by the model.
+* Coverage: True pass (True Pass, and True Fails) within all the real pass, as a measure of "reach"
+
+
+```{r AUC_1, echo=FALSE}
+Pred_auxiliar = prediction(test_2$V1 ,test_2$pass, label.ordering = NULL)
+auc.tmp = performance(Pred_auxiliar, "auc");
+auc_test = as.numeric(auc.tmp@y.values)
+```
+
+```{r AUC_2}
+#AUC over Test Sample
+auc_test
+```
+
+**net/net** An AUC close to 1 is an extraordinary performance metric. AUC under an easy way represents how much a model is capable of distinguish between classes(in this case pass or none pass)
+
+```{r ROC, echo=FALSE}
+CURVA_ROC_modelo4_test <- performance(Pred_auxiliar,"tpr","fpr")
+plot(CURVA_ROC_modelo4_test,colorize=TRUE)
+abline(a=0,b=1,col="black")
+```
+
+**net/net** AUC visualization though a ROC curve(just above), let us understand in our classification model how more than 80% of the True positives are classified with almost 100% probability.  
+
