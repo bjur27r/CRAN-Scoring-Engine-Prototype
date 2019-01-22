@@ -11,7 +11,7 @@
 * We must use a Deep Learning framework for this exercise as Keras.
 * We should split the dataset in train/test to verify your results.
 
-##Files
+## Files 
 
-Readme.html-> Code Explanation and model results.
-MD_V1.Rmd->Code
+* Readme.html-> Code Explanation and model results.
+* MD_V1.Rmd->Code
